@@ -27,6 +27,8 @@ class ElasticsearchRetriever(BaseRetriever):
         content_field: The document field name that contains the page content. If
             multiple indices are queried, specify a dict {index_name: field_name} here.
         document_mapper: Function to map Elasticsearch hits to LangChain Documents.
+        include_vectors_in_source: Optional. If True, includes vector fields in _source
+            for ES 9.2+ compatibility. Defaults to None (vectors excluded by default).
 
     For synchronous applications, use the ``ElasticsearchRetriever`` class.
     For asyhchronous applications, use the ``AsyncElasticsearchRetriever`` class.
@@ -37,6 +39,7 @@ class ElasticsearchRetriever(BaseRetriever):
     body_func: Callable[[str], Dict]
     content_field: Optional[Union[str, Mapping[str, str]]] = None
     document_mapper: Optional[Callable[[Mapping], Document]] = None
+    include_vectors_in_source: Optional[bool] = None
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -74,6 +77,7 @@ class ElasticsearchRetriever(BaseRetriever):
         username: Optional[str] = None,
         password: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
+        include_vectors_in_source: Optional[bool] = None,
     ) -> "ElasticsearchRetriever":
         client = None
         try:
@@ -95,6 +99,7 @@ class ElasticsearchRetriever(BaseRetriever):
             body_func=body_func,
             content_field=content_field,
             document_mapper=document_mapper,
+            include_vectors_in_source=include_vectors_in_source,
         )
 
     def _get_relevant_documents(
@@ -104,6 +109,11 @@ class ElasticsearchRetriever(BaseRetriever):
             raise ValueError("faulty configuration")  # should not happen
 
         body = self.body_func(query)
+        
+        # Add _source parameter if include_vectors_in_source is True
+        if self.include_vectors_in_source is True:
+            body["_source"] = {"exclude_vectors": False}
+        
         results = self.es_client.search(index=self.index_name, body=body)
         return [self.document_mapper(hit) for hit in results["hits"]["hits"]]
 

@@ -907,6 +907,125 @@ class TestElasticsearch:
         assert output == [Document(page_content="bar")]
 
     @pytest.mark.sync
+    def test_include_vectors_in_source_similarity_search(
+        self, es_params: dict, index_name: str
+    ) -> None:
+        """Test that include_vectors_in_source adds _source parameter to query body."""
+        texts = ["foo", "bar", "baz"]
+        docsearch = ElasticsearchStore.from_texts(
+            texts, ConsistentFakeEmbeddings(), **es_params, index_name=index_name
+        )
+
+        # Capture the query body dict using mutable reference
+        captured_query_body = [None]
+
+        def capture_query(
+            query_body: Dict[str, Any], query: Optional[str]
+        ) -> Dict[str, Any]:
+            # Store reference to the dict (wrapper will modify it after this)
+            captured_query_body[0] = query_body
+            # Note: _source is NOT in query_body here - it's added by wrapper AFTER this
+            return query_body  # Return same dict so wrapper modifies it in place
+
+        # Test with include_vectors_in_source=True
+        docsearch.similarity_search(
+            "foo", k=1, custom_query=capture_query, include_vectors_in_source=True
+        )
+
+        # Verify _source parameter was added by the wrapper (check AFTER the call)
+        assert captured_query_body[0] is not None
+        assert "_source" in captured_query_body[0]
+        assert captured_query_body[0]["_source"] == {"exclude_vectors": False}
+
+    @pytest.mark.sync
+    def test_include_vectors_in_source_similarity_search_with_score(
+        self, es_params: dict, index_name: str
+    ) -> None:
+        """Test that include_vectors_in_source adds _source parameter to query body."""
+        texts = ["foo", "bar", "baz"]
+        docsearch = ElasticsearchStore.from_texts(
+            texts, ConsistentFakeEmbeddings(), **es_params, index_name=index_name
+        )
+
+        # Capture the query body dict using mutable reference
+        captured_query_body = [None]
+
+        def capture_query(
+            query_body: Dict[str, Any], query: Optional[str]
+        ) -> Dict[str, Any]:
+            captured_query_body[0] = query_body
+            return query_body
+
+        # Test with include_vectors_in_source=True
+        docsearch.similarity_search_with_score(
+            "foo", k=1, custom_query=capture_query, include_vectors_in_source=True
+        )
+
+        # Verify _source parameter was added by the wrapper
+        assert captured_query_body[0] is not None
+        assert "_source" in captured_query_body[0]
+        assert captured_query_body[0]["_source"] == {"exclude_vectors": False}
+
+    @pytest.mark.sync
+    def test_include_vectors_in_source_similarity_search_by_vector_with_relevance_scores(
+        self, es_params: dict, index_name: str
+    ) -> None:
+        """Test that include_vectors_in_source adds _source parameter to query body."""
+        texts = ["foo", "bar", "baz"]
+        docsearch = ElasticsearchStore.from_texts(
+            texts, ConsistentFakeEmbeddings(), **es_params, index_name=index_name
+        )
+
+        # Capture the query body dict using mutable reference
+        captured_query_body = [None]
+
+        def capture_query(
+            query_body: Dict[str, Any], query: Optional[str]
+        ) -> Dict[str, Any]:
+            captured_query_body[0] = query_body
+            return query_body
+
+        # Test with include_vectors_in_source=True
+        embedding = ConsistentFakeEmbeddings().embed_query("foo")
+        docsearch.similarity_search_by_vector_with_relevance_scores(
+            embedding, k=1, custom_query=capture_query, include_vectors_in_source=True
+        )
+
+        # Verify _source parameter was added by the wrapper
+        assert captured_query_body[0] is not None
+        assert "_source" in captured_query_body[0]
+        assert captured_query_body[0]["_source"] == {"exclude_vectors": False}
+
+    @pytest.mark.sync
+    def test_include_vectors_in_source_max_marginal_relevance_search(
+        self, es_params: dict, index_name: str
+    ) -> None:
+        """Test that include_vectors_in_source adds _source parameter to query body."""
+        texts = ["foo", "bar", "baz"]
+        docsearch = ElasticsearchStore.from_texts(
+            texts, ConsistentFakeEmbeddings(), **es_params, index_name=index_name
+        )
+
+        # Capture the query body dict using mutable reference
+        captured_query_body = [None]
+
+        def capture_query(
+            query_body: Dict[str, Any], query: Optional[str]
+        ) -> Dict[str, Any]:
+            captured_query_body[0] = query_body
+            return query_body
+
+        # Test with include_vectors_in_source=True
+        docsearch.max_marginal_relevance_search(
+            "foo", k=1, custom_query=capture_query, include_vectors_in_source=True
+        )
+
+        # Verify _source parameter was added by the wrapper
+        assert captured_query_body[0] is not None
+        assert "_source" in captured_query_body[0]
+        assert captured_query_body[0]["_source"] == {"exclude_vectors": False}
+
+    @pytest.mark.sync
     def test_deployed_model_check_fails_approx(
         self, es_params: dict, index_name: str
     ) -> None:

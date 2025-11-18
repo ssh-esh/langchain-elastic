@@ -398,6 +398,7 @@ class ElasticsearchStore(VectorStore):
             Callable[[Dict[str, Any], Optional[str]], Dict[str, Any]]
         ] = None,
         doc_builder: Optional[Callable[[Dict], Document]] = None,
+        include_vectors_in_source: Optional[bool] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return Elasticsearch documents most similar to query.
@@ -407,17 +408,38 @@ class ElasticsearchStore(VectorStore):
             k: Number of Documents to return. Defaults to 4.
             fetch_k (int): Number of Documents to fetch to pass to knn num_candidates.
             filter: Array of Elasticsearch filter clauses to apply to the query.
+            include_vectors_in_source: Optional. If True, includes vector fields in _source
+                for ES 9.2+ compatibility. Defaults to None (vectors excluded by default).
 
         Returns:
             List of Documents most similar to the query,
             in descending order of similarity.
         """
+        # Wrap custom_query to add _source parameter if needed
+        def wrapped_custom_query(
+            query_body: Dict[str, Any], query_text: Optional[str]
+        ) -> Dict[str, Any]:
+            # Apply user's custom_query first if provided
+            if custom_query:
+                query_body = custom_query(query_body, query_text)
+            
+            # Add _source parameter if include_vectors_in_source is True
+            if include_vectors_in_source is True:
+                query_body["_source"] = {"exclude_vectors": False}
+            
+            return query_body
+        
+        final_custom_query = (
+            wrapped_custom_query if include_vectors_in_source is True or custom_query
+            else None
+        )
+        
         hits = self._store.search(
             query=query,
             k=k,
             num_candidates=fetch_k,
             filter=filter,
-            custom_query=custom_query,
+            custom_query=final_custom_query,
         )
         docs = _hits_to_docs_scores(
             hits=hits,
@@ -438,6 +460,7 @@ class ElasticsearchStore(VectorStore):
             Callable[[Dict[str, Any], Optional[str]], Dict[str, Any]]
         ] = None,
         doc_builder: Optional[Callable[[Dict], Document]] = None,
+        include_vectors_in_source: Optional[bool] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -455,6 +478,9 @@ class ElasticsearchStore(VectorStore):
                 Defaults to 0.5.
             fields: Other fields to get from elasticsearch source. These fields
                 will be added to the document metadata.
+            include_vectors_in_source: Optional. If True, includes vector fields in _source
+                for ES 9.2+ compatibility. Note: MMR already includes vectors via source_includes,
+                so this parameter is mainly for consistency. Defaults to None.
 
         Returns:
             List[Document]: A list of Documents selected by maximal marginal relevance.
@@ -464,6 +490,27 @@ class ElasticsearchStore(VectorStore):
                 "maximal marginal relevance search requires an embedding service."
             )
 
+        # Wrap custom_query to add _source parameter if needed
+        def wrapped_custom_query(
+            query_body: Dict[str, Any], query_text: Optional[str]
+        ) -> Dict[str, Any]:
+            # Apply user's custom_query first if provided
+            if custom_query:
+                query_body = custom_query(query_body, query_text)
+            
+            # Add _source parameter if include_vectors_in_source is True
+            # Note: MMR already uses source_includes with vector field, but this
+            # ensures compatibility with ES 9.2+ exclude_vectors default
+            if include_vectors_in_source is True:
+                query_body["_source"] = {"exclude_vectors": False}
+            
+            return query_body
+        
+        final_custom_query = (
+            wrapped_custom_query if include_vectors_in_source is True or custom_query
+            else None
+        )
+
         hits = self._store.max_marginal_relevance_search(
             embedding_service=self._embedding_service,
             query=query,
@@ -472,7 +519,7 @@ class ElasticsearchStore(VectorStore):
             num_candidates=fetch_k,
             lambda_mult=lambda_mult,
             fields=fields,
-            custom_query=custom_query,
+            custom_query=final_custom_query,
         )
 
         docs_scores = _hits_to_docs_scores(
@@ -513,6 +560,7 @@ class ElasticsearchStore(VectorStore):
             Callable[[Dict[str, Any], Optional[str]], Dict[str, Any]]
         ] = None,
         doc_builder: Optional[Callable[[Dict], Document]] = None,
+        include_vectors_in_source: Optional[bool] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """Return Elasticsearch documents most similar to query, along with scores.
@@ -521,6 +569,8 @@ class ElasticsearchStore(VectorStore):
             query: Text to look up documents similar to.
             k: Number of Documents to return. Defaults to 4.
             filter: Array of Elasticsearch filter clauses to apply to the query.
+            include_vectors_in_source: Optional. If True, includes vector fields in _source
+                for ES 9.2+ compatibility. Defaults to None (vectors excluded by default).
 
         Returns:
             List of Documents most similar to the query and score for each
@@ -531,8 +581,27 @@ class ElasticsearchStore(VectorStore):
         ):
             raise ValueError("scores are currently not supported in hybrid mode")
 
+        # Wrap custom_query to add _source parameter if needed
+        def wrapped_custom_query(
+            query_body: Dict[str, Any], query_text: Optional[str]
+        ) -> Dict[str, Any]:
+            # Apply user's custom_query first if provided
+            if custom_query:
+                query_body = custom_query(query_body, query_text)
+            
+            # Add _source parameter if include_vectors_in_source is True
+            if include_vectors_in_source is True:
+                query_body["_source"] = {"exclude_vectors": False}
+            
+            return query_body
+        
+        final_custom_query = (
+            wrapped_custom_query if include_vectors_in_source is True or custom_query
+            else None
+        )
+
         hits = self._store.search(
-            query=query, k=k, filter=filter, custom_query=custom_query
+            query=query, k=k, filter=filter, custom_query=final_custom_query
         )
         return _hits_to_docs_scores(
             hits=hits,
@@ -550,6 +619,7 @@ class ElasticsearchStore(VectorStore):
             Callable[[Dict[str, Any], Optional[str]], Dict[str, Any]]
         ] = None,
         doc_builder: Optional[Callable[[Dict], Document]] = None,
+        include_vectors_in_source: Optional[bool] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """Return Elasticsearch documents most similar to query, along with scores.
@@ -558,6 +628,8 @@ class ElasticsearchStore(VectorStore):
             embedding: Embedding to look up documents similar to.
             k: Number of Documents to return. Defaults to 4.
             filter: Array of Elasticsearch filter clauses to apply to the query.
+            include_vectors_in_source: Optional. If True, includes vector fields in _source
+                for ES 9.2+ compatibility. Defaults to None (vectors excluded by default).
 
         Returns:
             List of Documents most similar to the embedding and score for each
@@ -568,12 +640,31 @@ class ElasticsearchStore(VectorStore):
         ):
             raise ValueError("scores are currently not supported in hybrid mode")
 
+        # Wrap custom_query to add _source parameter if needed
+        def wrapped_custom_query(
+            query_body: Dict[str, Any], query_text: Optional[str]
+        ) -> Dict[str, Any]:
+            # Apply user's custom_query first if provided
+            if custom_query:
+                query_body = custom_query(query_body, query_text)
+            
+            # Add _source parameter if include_vectors_in_source is True
+            if include_vectors_in_source is True:
+                query_body["_source"] = {"exclude_vectors": False}
+            
+            return query_body
+        
+        final_custom_query = (
+            wrapped_custom_query if include_vectors_in_source is True or custom_query
+            else None
+        )
+
         hits = self._store.search(
             query=None,
             query_vector=embedding,
             k=k,
             filter=filter,
-            custom_query=custom_query,
+            custom_query=final_custom_query,
         )
         return _hits_to_docs_scores(
             hits=hits,
